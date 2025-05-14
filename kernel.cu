@@ -8,9 +8,11 @@
 
 // Matrix multiplication is really just a bunch of dot products,
 // so I think it is intuitive to design the kernel to be a dot product function
-__global__ void dotProductKernel()
-{
-
+__global__ void dotProductKernel(int *A, int *B, int *C)
+{ 
+    // A and B are matrices (stored as arrays) to multiply, C is final result
+    // This kernel will find dot product between row in A and col in B and store this in slot in C
+    
 }
 
 int main()
@@ -54,8 +56,15 @@ int main()
     cudaMalloc((void**)&dev_C, A_numRows * B_numCols * sizeof(int));
 
     // This next part is just populating the matrices A and B
+    for (int i = 0; i < A_numRows * A_numCols; i++) {
+        A[i] = i;
+    }
 
+    for (int i = 0; i < B_numRows * B_numCols; i++) {
+        B[i] = i*2;
+    }
 
+    // TODO: Copy memory to device, run kernel, free memory
 
     return 0;
 }
