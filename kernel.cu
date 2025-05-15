@@ -4,6 +4,8 @@
 
 #include <stdio.h>
 
+#include <chrono>
+
 // cudaError_t addWithCuda(int *c, const int *a, const int *b, unsigned int size);
 
 // Matrix multiplication is really just a bunch of dot products,
@@ -70,8 +72,24 @@ void printMatrix(int* matrix, int numRows, int numCols) {
     }
 }
 
+void matrixMultiplyCPU(const int* A, const int* B, int* C, int A_numRows, int A_numCols, int B_numRows, int B_numCols) {
+    for (int row = 0; row < A_numRows; row++) {
+        for (int col = 0; col < B_numCols; col++) {
+            int sum = 0;
+            for (int k = 0; k < A_numCols; k++) {
+                sum += A[(row * A_numCols) + k] * B[(k * B_numCols) + col];
+            }
+            C[(row * B_numCols) + col] = sum;
+        }
+    }
+}
+
 int main()
 {
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    
     /*
     These are what the default matrices look like:
 
@@ -89,12 +107,12 @@ int main()
 
     // The dimensions of the matrices, change these if you are 
     // multiplying your own matrices
-    const int A_numRows = 2;
-    const int A_numCols = 3;
-    const int B_numRows = 3;
-    const int B_numCols = 2;
+    const int A_numRows = 5;
+    const int A_numCols = 10;
+    const int B_numRows = 10;
+    const int B_numCols = 3;
 
-    int *A, * B, * C; // Host matrices
+    int *A, * B, * C, *cpu_C; // Host matrices
     int *dev_A, *dev_B, *dev_C; // Corresponding device matrices
 
     // Allocating the hsot memory
@@ -103,6 +121,7 @@ int main()
 
     // The output matrix dimensions will be A_numRows x B_numCols
     C = (int*)malloc(A_numRows * B_numCols * sizeof(int));
+    cpu_C = (int*)malloc(A_numRows * B_numCols * sizeof(int));
 
 
     // Now allocate the corresponding device memory
@@ -112,20 +131,23 @@ int main()
 
     // This next part is just populating the matrices A and B
     for (int i = 0; i < A_numRows * A_numCols; i++) {
-        A[i] = i;
+        A[i] = i + (i*3);
     }
 
     for (int i = 0; i < B_numRows * B_numCols; i++) {
-        B[i] = i*2;
+        B[i] = (i*2) + 19;
     }
 
     // Copy the A and B matrices to the device
     cudaMemcpy(dev_A, A, A_numRows * A_numCols * sizeof(int),cudaMemcpyHostToDevice);
     cudaMemcpy(dev_B, B, B_numRows * B_numCols * sizeof(int), cudaMemcpyHostToDevice);
 
+    
     // Refuse to multiply if the dimensions don't match
     if (A_numCols == B_numRows) {
+        cudaEventRecord(start);
         dotProductKernel<<<B_numCols, A_numRows>>>(dev_A, dev_B, dev_C, A_numRows, A_numCols, B_numRows, B_numCols);
+        cudaEventRecord(stop);
     }
     else {
         printf("ERROR: DIMENSIONS OF MATRICES A AND B DO NOT MATCH");
@@ -137,6 +159,10 @@ int main()
         free(A);
         free(B);
         free(C);
+        //free(cpu_C);
+
+        cudaEventDestroy(start);
+        cudaEventDestroy(stop);
 
         return 0;
     }
@@ -144,8 +170,22 @@ int main()
 
     // Copy the resulting C matrix back to the host
     cudaMemcpy(C, dev_C, A_numRows * B_numCols * sizeof(int), cudaMemcpyDeviceToHost);
+    cudaEventSynchronize(stop);
+    float milliseconds = 0;
+    cudaEventElapsedTime(&milliseconds, start, stop);
+    printf("GPU Kernel elapsed time: %f ms\n", milliseconds);
 
+    // The following is just to time the sequential CPU version of matrix multiplicationg, to see how much faster my version is
+    /*
+    auto cpu_start = std::chrono::high_resolution_clock::now();
+    matrixMultiplyCPU(A, B, cpu_C, A_numRows, A_numCols, B_numRows, B_numCols);
+    auto cpu_end = std::chrono::high_resolution_clock::now();
+    auto cpu_duration = std::chrono::duration_cast<std::chrono::microseconds>(cpu_end - cpu_start);
+    double cpu_time = cpu_duration.count() / 1000.0; // Convert to milliseconds
+    printf("CPU Matrix Multiplication Time: %.3f ms\n",cpu_time);
+    */
 
+    
     // Print A, B, and C to the console
     printf("Matrix A:\n");
     printMatrix(A, A_numRows, A_numCols);
@@ -153,7 +193,7 @@ int main()
     printMatrix(B, B_numRows, B_numCols);
     printf("\nMatrix C:\n");
     printMatrix(C, A_numRows, B_numCols);
-
+    
     // Free device and host memory
     cudaFree(dev_A);
     cudaFree(dev_B);
@@ -162,6 +202,10 @@ int main()
     free(A);
     free(B);
     free(C);
+    //free(cpu_C);
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
 
     return 0;
 }
